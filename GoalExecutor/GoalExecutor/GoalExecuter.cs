@@ -5,15 +5,35 @@ public sealed class GoalExecuter
 {
     private sealed class GoalFromCortege : IGoal
     {
-        public Delegate Action { get; set; }
-        public object[] Objectparametr { get; set; }
+        private object[]? _objects;
+        private Task _task;
+        public Task task
+        {
+            get
+            {
+                if (_task is null)
+                {
+                    throw new NullReferenceException (nameof (_objects));
+                }
+                return _task;
+            }
+            set => _task=value;
+        }
+        public object[] Objectparametr
+        {
+            get
+            {
+                if (_objects is null)
+                {
+                    throw new NullReferenceException (nameof (_objects));
+                }
+                return _objects;
+            }
+            set => _objects=value;
+        }
         public int Priority { get; set; }
     }
     private ILogger? Logger { get; set; }
-
-    public delegate void MethodContainer ( );
-
-    public event MethodContainer? Compleate;
 
     /// <summary>
     /// Список делегатов  готовых к выполнению в соответствии с приорететом
@@ -41,25 +61,26 @@ public sealed class GoalExecuter
 
     public Task<bool> AddWork ( params IGoal[] goals )
     {
-        return new Task<bool> (( ) =>
-        {
-            try
-            {
-                foreach (var goal in goals)
-                {
-                    _delegateToWork.Add (goal);
-                }
-            }
-            catch (Exception)
-            {
-                throw;
-            }           
-            return true;
-        });     
+        return Task.Run (( ) =>
+           {
+               try
+               {
+                   foreach (var goal in goals)
+                   {
+                       _delegateToWork.Add (goal);
+                   }
+               }
+               catch (Exception)
+               {
+                   throw;
+               }
+               return true;
+           });
+
     }
     public Task<bool> AddWork ( IEnumerable<IGoal> goals )
     {
-        return new Task<bool> (( ) =>
+        return Task.Run (( ) =>
         {
             try
             {
@@ -74,17 +95,17 @@ public sealed class GoalExecuter
             }
             return true;
         });
-       
+
     }
-    public Task<bool> AddWork ( params (Delegate, object[], int)[] goals )
+    public Task<bool> AddWork ( params (Action, object[], int)[] goals )
     {
-        return new Task<bool> (( ) =>
+        return Task.Run (( ) =>
         {
             try
             {
                 foreach (var goal in goals)
                 {
-                    _delegateToWork.Add (new GoalFromCortege { Action=goal.Item1, Objectparametr=goal.Item2, Priority=goal.Item3 });
+                    _delegateToWork.Add (new GoalFromCortege{ task=new Task(goal.Item1), Objectparametr=goal.Item2, Priority=goal.Item3 });
                 }
             }
             catch (Exception)
@@ -93,36 +114,26 @@ public sealed class GoalExecuter
             }
             return true;
         });
-        
     }
 
-    public Task<ConcurrentList<object>> Execute ( )
+    public async Task Execute ( )
     {
-
-        return new Task<ConcurrentList<object>> (( ) =>
-        {
-            ConcurrentList<object> results = new ( );
+       
             foreach (var item in _delegateToWork.OrderBy (x => x.Priority))
             {
                 try
                 {
-                    if (item is GoalFromCortege)
-                    {
-                        results.Add (item.Action.DynamicInvoke (item.Objectparametr));
-                    }
-                    else
-                    {
-                        results.Add (item.Action.DynamicInvoke ( ));
-                    }
+                     await item.task;
+
                     _compleateActions.Add (item);
 
                     if (Logger is not null)
                     {
-                        Logger.LogInformation (message: "Задача {item.Action.Method.Name} выполнена", item.Action.Method.Name);
+                        Logger.LogInformation (message: "Задача {item.task} выполнена", item.task);
                     }
                     else
                     {
-                        Console.WriteLine ($"Задача {item.Action.Method.Name} выполнена");
+                        Console.WriteLine ($"Задача {item.task} выполнена");
                     }
                 }
                 catch (Exception e)
@@ -132,72 +143,51 @@ public sealed class GoalExecuter
 
                     if (Logger is not null)
                     {
-                        Logger.LogInformation (e,"Задача {item.Action.Method.Name} не выполнена так как:{e.Message}", item.Action.Method.Name, e.Message);
+                        Logger.LogInformation (e, "Задача {item.task} не выполнена так как:{item.task.Exception}", item.task, item.task.Exception);
                     }
                     else
                     {
-                        Console.WriteLine ($"Задача {item.Action.Method.Name} не выполнена так как:{e.Message}");
+                        Console.WriteLine ($"Задача {item.task} не выполнена так как:{item.task.Exception}");
                     }
                 }
 
             }
-            if (Compleate is not null)
-            {
-                Compleate.Invoke ( );
-            }
-            return results;
-        });
-
     }
-    public Task<ConcurrentList<object>> Execute ( IEnumerable<IGoal> tuples )
+    public async Task Execute ( IEnumerable<IGoal> tuples )
     {
-        return new Task<ConcurrentList<object>> (( ) =>
+
+        foreach (var item in tuples)
         {
-            ConcurrentList<object> results = new ( );
-            foreach (var item in tuples)
-            {
-                try
-                {
-                    if (item is GoalFromCortege)
-                    {
-                        results.Add(item.Action.DynamicInvoke (item.Objectparametr));
-                    }
-                    else
-                    {
-                        results.Add (item.Action.DynamicInvoke ( ));
-                    }
-                        _compleateActions.Add (item);
+            try
+            {               
+                await item.task;
+               
+                _compleateActions.Add (item);
 
-                    if (Logger is not null)
-                    {
-                        Logger.LogInformation (message: "Задача {item.Item1.Method.Name} выполнена", item.Action.Method.Name);
-                    }
-                    else
-                    {
-                        Console.WriteLine ("Задача {item.Item1.Method.Name} выполнена");
-                    }
+                if (Logger is not null)
+                {
+                    Logger.LogInformation (message: "Задача {item.task} выполнена", item.task);
                 }
-                catch (Exception e)
+                else
                 {
-                    _unfulfilledActions.Add (item);
-
-                    if (Logger is not null)
-                    {
-
-                        Logger.LogInformation (e, "Задача {item.Item1.Method.Name}"+
-                            " не выполнена так как:{e.Message}", item.Action.Method.Name, e.Message);
-                    }
-                    else
-                    {
-                        Console.WriteLine ($"Задача {item.Action.Method.Name} не выполнена так как:{e.Message}");
-                    }
+                    Console.WriteLine ("Задача {item.task} выполнена");
                 }
             }
-            if (Compleate is not null)
+            catch (Exception e)
             {
-                Compleate.Invoke ( );
+                _unfulfilledActions.Add (item);
+
+                if (Logger is not null)
+                {
+
+                    Logger.LogInformation (e, "Задача {item.task}"+
+                        " не выполнена так как:{e.Message}", item.task, item.task.Exception);
+                }
+                else
+                {
+                    Console.WriteLine ($"Задача {item.task} не выполнена так как:{item.task.Exception}");
+                }
             }
-            return results;
-        });
+        }
     }
 }

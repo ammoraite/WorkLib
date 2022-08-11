@@ -1,9 +1,12 @@
 ﻿using System.Collections;
 
+using static System.Net.WebRequestMethods;
+
 namespace AmmoraiteLib
 {
     public sealed class ConcurrentList<T> : IEnumerable<T>
-    {
+{
+        
         private object _updatelocker = new ( );
 
         private DelegateQueue<Delegate> ConcurrentListDelegateQueue = new (10);
